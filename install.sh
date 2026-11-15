@@ -28,7 +28,7 @@ case "$COMMAND" in start|stop|restart|status|help|-h|--help) ;; *) usage; die "U
 if [[ "$COMMAND" == help || "$COMMAND" == -h || "$COMMAND" == --help ]]; then usage; exit 0; fi
 
 SOURCE_DIR=""
-if [[ -f "${BASH_SOURCE[0]}" ]]; then
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
   SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 fi
 # Bootstrap when used as a curl | bash one-liner.
@@ -75,6 +75,14 @@ fi
 if [[ "$COMMAND" == stop ]]; then stop_server; exit 0; fi
 if [[ "$COMMAND" == restart ]]; then stop_server; fi
 command -v curl >/dev/null || die 'curl required: sudo apt install curl'
+# Create the reusable launcher even if an existing Kokoro server is already healthy.
+mkdir -p "$BIN_DIR"
+cat > "$BIN_DIR/kokoro-cai" <<EOF
+#!/usr/bin/env bash
+exec bash "${SOURCE_DIR:-$BOOTSTRAP_DIR}/install.sh" "\$@"
+EOF
+chmod +x "$BIN_DIR/kokoro-cai"
+
 if health; then
   say "Kokoro is already running: $HEALTH"
   if [[ -n "$SOURCE_DIR" && -f "$SOURCE_DIR/character-ai-kokoro.user.js" ]]; then
