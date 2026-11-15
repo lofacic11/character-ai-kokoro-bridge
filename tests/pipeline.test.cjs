@@ -133,3 +133,31 @@ test('test voice produces an HTTP request independently of the chat', () => {
   assert.equal(x.requests.length,1);
   assert.match(JSON.parse(x.requests[0].opts.data).text,/paragraph pipeline/);
 });
+
+test('streams sentences within a single paragraph before completion', () => {
+  const x=setup();
+  const msg=x.message(['The first sentence is ready. The next one is typing'],false);
+  x.root.children.unshift(x.group(msg));x.tick();
+  assert.equal(x.requests.length,1);
+  assert.equal(JSON.parse(x.requests[0].opts.data).text,'The first sentence is ready.');
+  x.finish(x.requests[0]);
+  assert.equal(x.players[0].started,true);
+  msg.getAttribute=()=> 'completed-message';
+  x.tick(200);x.tick(700);
+  assert.equal(x.requests.length,2);
+  assert.equal(JSON.parse(x.requests[1].opts.data).text,'The next one is typing');
+  x.finish(x.requests[1]);
+  assert.equal(x.players.length,1);
+  x.players[0].onended();
+  assert.equal(x.players.length,2);
+});
+
+test('does not synthesize unfinished trailing sentence while streaming', () => {
+  const x=setup();
+  const msg=x.message(['Hello there! This part is incompl'],false);
+  x.root.children.unshift(x.group(msg));x.tick();
+  assert.equal(x.requests.length,1);
+  assert.equal(JSON.parse(x.requests[0].opts.data).text,'Hello there!');
+  x.tick(1000);
+  assert.equal(x.requests.length,1);
+});
