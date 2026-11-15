@@ -91,6 +91,36 @@ Long blocks exceeding the server's 2,000-character limit are split at word bound
 
 **Limitations:** Character.AI's HTML can change. The app does not necessarily expose every paragraph boundary early. Brief pauses can occur if the next paragraph has not finished generating by the time the previous audio ends. This is sentence/paragraph-level pipelining, not true low-latency phoneme streaming. Character.AI may revise earlier text, forcing a queue reset. The project is unofficial and should be used in accordance with applicable website terms.
 
+## v0.5 audiobook preview (experimental feature branch)
+
+This version introduces a **single-voice audiobook pipeline** for Character.AI roleplay messages. The **same Kokoro voice** reads both `*stage directions*` and quoted dialogue, but they are queued as separate speech segments.
+
+A line such as:
+
+```text
+*She takes a breath.* "Don't leave." *She whispers in a low voice.*
+```
+
+is queued as narration → dialogue → narration. The following `*whispers*` cue applies to the preceding dialogue; the narrator segments retain neutral pacing. Recognized narration cues (whispers, groans, jagged breathing, shouting, etc.) also carry over to later dialogue until a new direction is detected. Roleplay vocalizations such as `mhm`, `mmff`, and `nghh` are normalized before synthesis.
+
+**What it can do now:** preserve the spoken narrative, avoid saying literal asterisks or quotation marks, detect basic voice directions, adjust **speech speed** in Kokoro requests, and delay quoted lines until a following stage direction can be read. Existing audio prefetch/playback ordering and interruption are preserved.
+
+**What it cannot do yet:** Kokoro's `/speak` API does not accept emotion, pitch, whispering, laughter or breathy delivery controls. A speed adjustment **does not produce convincing emotional acting**. The direction parser is rule-based, and text such as `She gasps` is currently narrated rather than generating a separate gasp sound. Real expressive delivery requires a separately installed expressive TTS backend (e.g. Qwen3-TTS or Chatterbox) and model-specific controls; those are not installed or claimed by this preview.
+
+**Latency tradeoff:** with RP markup, the bridge waits for the closing `*...` stage direction before committing a quoted line. This can make dialogue start later than v0.4.1 but avoids speaking it before a trailing voice instruction arrives. Without RP markup, normal sentence pipelining is retained.
+
+**Testing on a separate branch:**
+
+```bash
+cd ~/Documents/git/character-ai-kokoro-bridge
+git fetch origin
+git switch --track origin/feat/scene-aware-audiobook-v05
+node --test tests/*.test.cjs
+start-kokoro
+```
+
+Import the branch's `character-ai-kokoro.user.js` into Tampermonkey and disable the previous script first. The `start-kokoro` launcher itself does not need to be updated. For reliable A/B comparison, keep the old userscript disabled while testing. Main remains stable.
+
 ## Development and tests
 
 Run `node --check character-ai-kokoro.user.js` for JavaScript syntax validation, and `node --test tests/*.test.cjs` for the mocked DOM/playback regression suite. Tests cover early paragraph and sentence generation, ordered playback, single-paragraph completion, interruption, and Test voice. Manual testing in Brave with Character.AI and Kokoro remains necessary.
