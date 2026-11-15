@@ -2,7 +2,7 @@
 
 A lightweight Tampermonkey userscript that automatically reads **Character.AI replies paragraph by paragraph** aloud using your own **local Kokoro ONNX TTS server**. No Character.AI credentials or unofficial API required.
 
-> **Status:** v0.5.0 experimental audiobook preview (automated tests only; Brave/Kokoro listening test pending). Tested by the project creator in Brave on Ubuntu with a local Kokoro server. This is an independent, unofficial project; not affiliated with Character.AI or Kokoro.
+> **Status:** v0.5.1 experimental audiobook + Qwen3-TTS expressive backend (real GPU/audio validation pending). Tested by the project creator in Brave on Ubuntu with a local Kokoro server. This is an independent, unofficial project; not affiliated with Character.AI or Kokoro.
 
 ## Features
 
@@ -105,7 +105,7 @@ is queued as narration → dialogue → narration. The following `*whispers*` cu
 
 **What it can do now:** preserve the spoken narrative, avoid saying literal asterisks or quotation marks, detect basic voice directions, adjust **speech speed** in Kokoro requests, and delay quoted lines until a following stage direction can be read. Existing audio prefetch/playback ordering and interruption are preserved.
 
-**What it cannot do yet:** Kokoro's `/speak` API does not accept emotion, pitch, whispering, laughter or breathy delivery controls. A speed adjustment **does not produce convincing emotional acting**. The direction parser is rule-based, and text such as `She gasps` is currently narrated rather than generating a separate gasp sound. Real expressive delivery requires a separately installed expressive TTS backend (e.g. Qwen3-TTS or Chatterbox) and model-specific controls; those are not installed or claimed by this preview.
+**Expressive backend now available (experimental):** The opt-in [Qwen3-TTS backend](docs/EXPRESSIVE-TTS.md) adds actual per-line voice-direction instructions using a stable Qwen speaker for narration and dialogue. It runs in a separate Python environment on port `8881`; the existing Kokoro service on `8880` is retained for fallback. Kokoro by itself still only adjusts speed; neither engine guarantees realistic grunts or gasps. On an 8 GB NVIDIA GPU, the expressive model's performance and ability to fit in VRAM require real testing.
 
 **Latency tradeoff:** with RP markup, the bridge waits for the closing `*...` stage direction before committing a quoted line. This can make dialogue start later than v0.4.1 but avoids speaking it before a trailing voice instruction arrives. Without RP markup, normal sentence pipelining is retained.
 
@@ -120,6 +120,12 @@ start-kokoro
 ```
 
 Import the branch's `character-ai-kokoro.user.js` into Tampermonkey and disable the previous script first. The `start-kokoro` launcher itself does not need to be updated. For reliable A/B comparison, keep the old userscript disabled while testing. Main remains stable.
+
+## Optional expressive Qwen3-TTS engine
+
+For actual style-conditioned dialogue (soft whisper, strained breathing, urgent delivery) install the separate [Qwen3-TTS expressive backend](docs/EXPRESSIVE-TTS.md). **This is opt-in; it does not replace Kokoro or require updating your `start-kokoro` shortcut.**
+
+The userscript in this experimental branch prefers the Qwen API on `127.0.0.1:8881` and automatically falls back to Kokoro on `127.0.0.1:8880` if Qwen is not available. Both narration and dialogue use the same Qwen speaker (default: Serena), with different natural-language delivery prompts. Qwen may be too memory-intensive for an 8 GB GPU. `USE_EXPRESSIVE = false` at the top of the userscript forces Kokoro.
 
 ## Development and tests
 
