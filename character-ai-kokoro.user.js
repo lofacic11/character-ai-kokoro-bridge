@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Character.AI -> Local Kokoro (Pipelined Speech Blocks)
 // @namespace    local.kokoro.characterai
-// @version      0.4.1
+// @version      0.4.2
 // @description  Synthesizes completed sentences or paragraphs early; plays speech blocks in order.
 // @match        https://character.ai/*
 // @match        https://*.character.ai/*
@@ -72,6 +72,26 @@
     return s.replace(/\s+/g,' ').replace(/[*_`#]/g,'').trim();
   }
 
+  // Only transform text sent to Kokoro. Keep the original DOM text unchanged so
+  // streaming offsets, revision detection and paragraph boundaries stay stable.
+  function normalizeSpeech(s) {
+    const pronunciation = {
+      mhm: 'mm-hmm',
+      mmhm: 'mm-hmm',
+      mmhmm: 'mm-hmm',
+      mmff: 'mmm',
+      mmfff: 'mmm',
+      mmph: 'mmm',
+      mmpph: 'mmm',
+      mghh: 'ugh',
+      nghh: 'ugh',
+      hngh: 'ugh',
+      hnghh: 'ugh',
+    };
+    // Standalone vocalizations only; never change letters inside normal words.
+    return normalize(s).replace(/\b(?:mhm|mmhm|mmhmm|mmfff?|mmpp?h|mghh|nghh|hnghh?)\b/gi,
+      word => pronunciation[word.toLowerCase()] || word);
+  }
   function paragraphs(prose) {
     let blocks = [...prose.children]
       .map(el => normalize(el.innerText || el.textContent || ''))
@@ -90,7 +110,7 @@
   }
 
   function addParagraph(p, text) {
-    text = normalize(text);
+    text = normalizeSpeech(text);
     while (text.length > 2000) {
       let split = text.lastIndexOf(' ', 2000);
       if (split < 1000) split = 2000;
@@ -287,5 +307,5 @@
 
   setInterval(scan, 180);
   scan();
-  log('v0.4.1 loaded. Completed sentences and paragraphs are synthesized early.');
+  log('v0.4.2 loaded. Completed sentences and paragraphs are synthesized early.');
 })();
