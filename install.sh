@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 REPO_URL="https://github.com/lofacic11/character-ai-kokoro-bridge.git"
-BOOTSTRAP_DIR="\${XDG_DATA_HOME:-$HOME/.local/share}/character-ai-kokoro-bridge"
-APP_DIR="\${XDG_DATA_HOME:-$HOME/.local/share}/character-ai-kokoro"
+BOOTSTRAP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/character-ai-kokoro-bridge"
+APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/character-ai-kokoro"
 RUNTIME_DIR="$APP_DIR/runtime"
 BIN_DIR="$HOME/.local/bin"
 MODEL_URL="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.onnx"
 VOICES_URL="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin"
-PORT="\${KOKORO_PORT:-8880}"
+PORT="${KOKORO_PORT:-8880}"
 [[ "$PORT" =~ ^[0-9]+$ ]] || { echo "Invalid port" >&2; exit 1; }
 HEALTH="http://127.0.0.1:$PORT/health"
-COMMAND="\${1:-start}"
+COMMAND="${1:-start}"
 say() { printf '[kokoro-cai] %s\n' "$*"; }
 die() { printf '[kokoro-cai] ERROR: %s\n' "$*" >&2; exit 1; }
 usage() {
@@ -28,8 +28,8 @@ case "$COMMAND" in start|stop|restart|status|help|-h|--help) ;; *) usage; die "U
 if [[ "$COMMAND" == help || "$COMMAND" == -h || "$COMMAND" == --help ]]; then usage; exit 0; fi
 
 SOURCE_DIR=""
-if [[ -f "\${BASH_SOURCE[0]}" ]]; then
-  SOURCE_DIR="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -f "${BASH_SOURCE[0]}" ]]; then
+  SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 fi
 # Bootstrap when used as a curl | bash one-liner.
 if [[ "$COMMAND" == start || "$COMMAND" == restart ]]; then
@@ -130,7 +130,7 @@ fi
 mkdir -p "$BIN_DIR"
 cat > "$BIN_DIR/kokoro-cai" <<EOF
 #!/usr/bin/env bash
-exec bash "\${SOURCE_DIR:-$BOOTSTRAP_DIR}/install.sh" "\$@"
+exec bash "${SOURCE_DIR:-$BOOTSTRAP_DIR}/install.sh" "\$@"
 EOF
 chmod +x "$BIN_DIR/kokoro-cai"
 say "Starting Uvicorn (logs: $LOG_FILE)..."
