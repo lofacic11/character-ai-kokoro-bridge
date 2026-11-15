@@ -215,3 +215,41 @@ test('RP sounds are normalized only in TTS requests', () => {
   assert.equal(JSON.parse(x.requests[1].opts.data).text, 'mm-hmm... mmm.');
   assert.equal(msg.querySelector('.prose').innerText, '*She groans.* "Mhm... Mmff."');
 });
+
+
+test('dialogue sends a scene-aware instruction to the expressive backend', () => {
+  const x = setup();
+  const msg = x.message(['*She whispers softly.* "Stay with me."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  assert.equal(x.requests.length, 2);
+  const dialogue = x.requests[1];
+  assert.equal(dialogue.opts.url, 'http://127.0.0.1:8881/speak');
+  assert.equal(JSON.parse(dialogue.opts.data).kind, 'dialogue');
+  assert.equal(JSON.parse(dialogue.opts.data).direction, 'soft');
+  assert.equal(JSON.parse(dialogue.opts.data).speed, 0.86);
+});
+
+test('retries the same expressive segment with Kokoro after Qwen failure', () => {
+  const x = setup();
+  const msg = x.message(['*Her voice trembles.* "Please stay."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  assert.equal(x.requests[0].opts.url, 'http://127.0.0.1:8881/speak');
+  x.requests[0].opts.onload({status: 503, response: null});
+  assert.equal(x.requests.length, 3, 'retries failed narration after initial two prefetch slots');
+  assert.equal(x.requests[2].opts.url, 'http://127.0.0.1:8880/speak');
+  assert.equal(JSON.parse(x.requests[2].opts.data).text, 'Her voice trembles.');
+  x.finish(x.requests[2]);
+  assert.equal(x.players.length, 1, 'fallback audio keeps its original queue position');
+});
+
+test('failed old expressive callback cannot restart audio after cancellation', () => {
+  const x = setup();
+  const msg = x.message(['*She looks down.* "No."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  const request = x.requests[0];
+  const button = x.controls[0].children[2];
+  button.onclick();
+  assert.equal(request.aborted, true);
+  request.opts.onerror({status: 0});
+  assert.equal(x.requests.length, 2, 'no retries should occur after stop');
+});
