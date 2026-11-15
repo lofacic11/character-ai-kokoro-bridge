@@ -18,4 +18,4 @@ jobs:
       - name: Start-kokoro shortcut smoke test
         run: bash tests/start-shortcut-smoke.sh
       - name: Check server Python syntax
-        run: python -m py_compile server.py
+        run: python -m py_compile server.py expressive_server.py
