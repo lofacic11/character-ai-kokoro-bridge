@@ -161,3 +161,121 @@ test('does not synthesize unfinished trailing sentence while streaming', () => {
   x.tick(1000);
   assert.equal(x.requests.length,1);
 });
+
+
+test('audiobook reads narration and quoted dialogue in order with the same voice', () => {
+  const x = setup();
+  const msg = x.message(['*Kafka takes a breath.* "Please stay." *She whispers softly.*'], true);
+  x.root.children.unshift(x.group(msg));
+  x.tick(); x.tick(700);
+  assert.equal(x.requests.length, 2, 'prefetch is capped at two synthesis requests');
+  x.finish(x.requests[0]);
+  assert.equal(x.requests.length, 3);
+  const actual = x.requests.map(r => JSON.parse(r.opts.data));
+  assert.deepEqual(actual.map(r => r.text), [
+    'Kafka takes a breath.', 'Please stay.', 'She whispers softly.'
+  ]);
+  assert.deepEqual(actual.map(r => r.voice), ['af_heart', 'af_heart', 'af_heart']);
+  assert.equal(actual[1].speed, 0.86, 'trailing whispered cue affects prior quote');
+  assert.equal(actual[0].speed, 1.0, 'narration remains neutral');
+});
+
+test('holds quoted dialogue until the following stage direction arrives', () => {
+  const x = setup();
+  let line = '*She looks away.* "Stay here."';
+  const msg = x.message([line], false);
+  x.root.children.unshift(x.group(msg)); x.tick();
+  assert.equal(x.requests.length, 1);
+  assert.equal(JSON.parse(x.requests[0].opts.data).text, 'She looks away.');
+  const prose = msg.querySelector('.prose');
+  prose.children[0].innerText = line + ' *She whispers, trembling.*';
+  prose.innerText = prose.children[0].innerText;
+  x.tick();
+  assert.equal(x.requests.length, 2, 'prefetch is capped at two synthesis requests');
+  x.finish(x.requests[0]);
+  assert.equal(x.requests.length, 3);
+  const spoken = x.requests.map(r => JSON.parse(r.opts.data));
+  assert.equal(spoken[1].text, 'Stay here.');
+  assert.equal(spoken[1].speed, 0.86);
+});
+
+test('persists expressive dialogue pacing across narration segments', () => {
+  const x = setup();
+  const msg = x.message(['*Her breathing becomes jagged.* "I need help." *She turns away.* "Please stay."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  for (let i = 0; i < x.requests.length; i++) x.finish(x.requests[i]);
+  const spoken = x.requests.map(r => JSON.parse(r.opts.data));
+  assert.deepEqual(spoken.filter(r => r.text.includes('help') || r.text.includes('stay')).map(r => r.speed), [0.9, 0.9]);
+});
+
+test('RP sounds are normalized only in TTS requests', () => {
+  const x = setup();
+  const msg = x.message(['*She groans.* "Mhm... Mmff."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  assert.equal(JSON.parse(x.requests[1].opts.data).text, 'mm-hmm... mmm.');
+  assert.equal(msg.querySelector('.prose').innerText, '*She groans.* "Mhm... Mmff."');
+});
+
+
+test('dialogue sends a scene-aware instruction to the expressive backend', () => {
+  const x = setup();
+  const msg = x.message(['*She whispers softly.* "Stay with me."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  assert.equal(x.requests.length, 2);
+  const dialogue = x.requests[1];
+  assert.equal(dialogue.opts.url, 'http://127.0.0.1:8881/speak');
+  assert.equal(JSON.parse(dialogue.opts.data).kind, 'dialogue');
+  assert.equal(JSON.parse(dialogue.opts.data).direction, 'soft');
+  assert.equal(JSON.parse(dialogue.opts.data).speed, 0.86);
+});
+
+test('retries the same expressive segment with Kokoro after Qwen failure', () => {
+  const x = setup();
+  const msg = x.message(['*Her voice trembles.* "Please stay."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  assert.equal(x.requests[0].opts.url, 'http://127.0.0.1:8881/speak');
+  x.requests[0].opts.onload({status: 503, response: null});
+  assert.equal(x.requests.length, 3, 'retries failed narration after initial two prefetch slots');
+  assert.equal(x.requests[2].opts.url, 'http://127.0.0.1:8880/speak');
+  assert.equal(JSON.parse(x.requests[2].opts.data).text, 'Her voice trembles.');
+  x.finish(x.requests[2]);
+  assert.equal(x.players.length, 1, 'fallback audio keeps its original queue position');
+});
+
+test('failed old expressive callback cannot restart audio after cancellation', () => {
+  const x = setup();
+  const msg = x.message(['*She looks down.* "No."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  const request = x.requests[0];
+  const button = x.controls[0].children[2];
+  button.onclick();
+  assert.equal(request.aborted, true);
+  request.opts.onerror({status: 0});
+  assert.equal(x.requests.length, 2, 'no retries should occur after stop');
+});
+
+
+test('preserves rendered italic HTML stage directions as emotional context', () => {
+  const x = setup();
+  const proseChild = {
+    tagName: 'P',
+    nodeType: 1,
+    childNodes: [
+      {nodeType: 1, tagName: 'EM', childNodes: [
+        {nodeType: 3, textContent: 'She whispers softly.'}
+      ]},
+      {nodeType: 3, textContent: ' "Stay with me."'},
+    ],
+  };
+  const msg = x.message(['ignored text'], true);
+  const prose = msg.querySelector('.prose');
+  prose.children = [proseChild];
+  prose.innerText = 'She whispers softly. "Stay with me."';
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  const segments = x.requests.map(req => JSON.parse(req.opts.data));
+  assert.equal(segments[0].text, 'She whispers softly.');
+  assert.equal(segments[0].kind, 'narration');
+  assert.equal(segments[1].text, 'Stay with me.');
+  assert.equal(segments[1].kind, 'dialogue');
+  assert.equal(segments[1].direction, 'soft');
+});
