@@ -161,3 +161,31 @@ test('does not synthesize unfinished trailing sentence while streaming', () => {
   x.tick(1000);
   assert.equal(x.requests.length,1);
 });
+
+
+test('normalizes RP vocalizations before sending TTS, without changing ordinary dialogue', () => {
+  const x = setup();
+  const input = 'Mhm, yes. Mmff! Mmph... Mghh, nghh, hngh. The mammoth remembered everything.';
+  const msg = x.message([input], true);
+  x.root.children.unshift(x.group(msg));
+  x.tick(); x.tick(700);
+  assert.equal(x.requests.length, 1);
+  const spoken = JSON.parse(x.requests[0].opts.data).text;
+  assert.equal(spoken, 'mm-hmm, yes. mmm! mmm... ugh, ugh, ugh. The mammoth remembered everything.');
+  assert.equal(msg.querySelector('.prose').innerText, input, 'visible Character.AI text remains untouched');
+});
+
+test('normalizes early pipelined blocks, not only completed replies', () => {
+  const x = setup();
+  const msg = x.message(['Mhm, that makes sense. Mmff still typing'], false);
+  x.root.children.unshift(x.group(msg)); x.tick();
+  assert.equal(x.requests.length, 1);
+  assert.equal(JSON.parse(x.requests[0].opts.data).text, 'mm-hmm, that makes sense.');
+});
+
+test('keeps regular words containing similar letter sequences intact', () => {
+  const x = setup();
+  const msg = x.message(['Mhmtest and humming are not RP sound tokens.'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  assert.equal(JSON.parse(x.requests[0].opts.data).text, 'Mhmtest and humming are not RP sound tokens.');
+});
