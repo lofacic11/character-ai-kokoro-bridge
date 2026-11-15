@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Character.AI -> Local Kokoro (Audiobook Preview)
 // @namespace    local.kokoro.characterai
-// @version      0.5.0
-// @description  One-voice audiobook narration with contextual dialogue pacing and pipelined playback.
+// @version      0.5.1
+// @description  Scene-aware audiobook playback with Qwen expressive TTS and Kokoro fallback.
 // @match        https://character.ai/*
 // @match        https://*.character.ai/*
 // @grant        GM_xmlhttpRequest
@@ -15,9 +15,11 @@
   if (window.__caiKokoroV4) return;
   window.__caiKokoroV4 = true;
 
-  const ENDPOINT = 'http://127.0.0.1:8880/speak';
+  const KOKORO_ENDPOINT = 'http://127.0.0.1:8880/speak';
+  const EXPRESSIVE_ENDPOINT = 'http://127.0.0.1:8881/speak';
+  const USE_EXPRESSIVE = true; // Set false to force Kokoro.
   const VOICE = 'af_heart';
-  const PREFIX = '[c.ai Kokoro]';
+  const PREFIX = '[c.ai Audiobook]';
   const log = (...args) => console.log(PREFIX, ...args);
   let enabled = true;
   let initialized = false;
@@ -183,15 +185,57 @@
       voiceState: {direction: 'neutral'}};
   }
 
-  function addParagraph(p, text, speed = 1.0, kind = 'narration') {
+  function addParagraph(p, text, speed = 1.0, kind = 'narration', direction = 'neutral') {
     text = spokenText(text);
     while (text.length > 2000) {
       let split = text.lastIndexOf(' ', 2000);
       if (split < 1000) split = 2000;
-      p.items.push({text: text.slice(0, split), speed, kind, status: 'queued', url: null});
+      p.items.push({text: text.slice(0, split), speed, kind, direction, status: 'queued', url: null});
       text = text.slice(split).trim();
     }
-    if (text.length > 1) p.items.push({text, speed, kind, status: 'queued', url: null});
+    if (text.length > 1) p.items.push({text, speed, kind, direction, status: 'queued', url: null});
+  }
+
+  function requestBlock(p, run, item, endpoint, retried = false) {
+    if (!enabled || p !== pipeline || run !== generation) return;
+    let req;
+    const retryOrFail = message => {
+      if (run !== generation || p !== pipeline) return;
+      if (!retried && USE_EXPRESSIVE && endpoint === EXPRESSIVE_ENDPOINT) {
+        log('Expressive TTS unavailable; retrying with Kokoro:', message);
+        requestBlock(p, run, item, KOKORO_ENDPOINT, true);
+      } else {
+        item.status = 'failed';
+        console.error(PREFIX, 'TTS failed:', message);
+        pump(p, run); playReady(p, run);
+      }
+    };
+    req = GM_xmlhttpRequest({
+      method: 'POST', url: endpoint,
+      headers: {'Content-Type': 'application/json'},
+      data: JSON.stringify({
+        text: item.text, voice: VOICE, speed: item.speed,
+        kind: item.kind, direction: item.direction
+      }),
+      responseType: 'blob', timeout: 120000,
+      onload: res => {
+        requests.delete(req);
+        if (run !== generation || p !== pipeline) return;
+        if (res.status === 200 && res.response) {
+          const blob = res.response instanceof Blob ? res.response :
+            new Blob([res.response], {type: 'audio/wav'});
+          item.url = URL.createObjectURL(blob);
+          item.status = 'ready';
+          log('Audio ready for block', p.items.indexOf(item) + 1,
+            'engine=', endpoint === EXPRESSIVE_ENDPOINT ? 'qwen' : 'kokoro',
+            'synthesis_ms=', Date.now() - item.requestedAt);
+          pump(p, run); playReady(p, run);
+        } else retryOrFail('HTTP ' + res.status);
+      },
+      onerror: () => { requests.delete(req); retryOrFail('network error'); },
+      ontimeout: () => { requests.delete(req); retryOrFail('timeout'); },
+    });
+    requests.add(req);
   }
 
   function pump(p, run) {
@@ -203,37 +247,9 @@
       item.status = 'loading';
       item.requestedAt = Date.now();
       capacity--;
-      let req;
-      req = GM_xmlhttpRequest({
-        method: 'POST', url: ENDPOINT,
-        headers: {'Content-Type': 'application/json'},
-        data: JSON.stringify({text:item.text,voice:VOICE,speed:item.speed}),
-        responseType:'blob',timeout:60000,
-        onload: res => {
-          requests.delete(req);
-          if (run !== generation || p !== pipeline) return;
-          if (res.status === 200 && res.response) {
-            const blob = res.response instanceof Blob ? res.response :
-              new Blob([res.response], {type:'audio/wav'});
-            item.url = URL.createObjectURL(blob);
-            item.status = 'ready';
-            log('Audio ready for block', p.items.indexOf(item)+1,
-              'synthesis_ms=', Date.now()-item.requestedAt);
-          } else {
-            item.status = 'failed';
-            console.error(PREFIX,'Kokoro returned HTTP',res.status);
-          }
-          pump(p,run); playReady(p,run);
-        },
-        onerror: err => { requests.delete(req); if(run!==generation)return;
-          console.error(PREFIX,'Synthesis failed',err);
-          item.status='failed';pump(p,run);playReady(p,run); },
-        ontimeout: () => { requests.delete(req); if(run!==generation)return;
-          console.error(PREFIX,'Synthesis timeout');
-          item.status='failed';pump(p,run);playReady(p,run); }
-      });
-      requests.add(req);
-      log('Generating block',p.items.indexOf(item)+1);
+      requestBlock(p, run, item, USE_EXPRESSIVE ? EXPRESSIVE_ENDPOINT : KOKORO_ENDPOINT);
+      log('Generating block', p.items.indexOf(item) + 1,
+        'kind=', item.kind, 'direction=', item.direction);
     }
   }
 
@@ -332,7 +348,7 @@
       const raw = remainder.slice(0, boundary);
       if (AUDIOBOOK_MODE) {
         const parts = audiobookSegments(raw, p.voiceState);
-        for (const part of parts) addParagraph(p, part.text, part.speed, part.kind);
+        for (const part of parts) addParagraph(p, part.text, part.speed, part.kind, part.direction);
         log('Queued audiobook segments', parts.length, 'since_reply_ms=', Date.now()-p.startedAt);
       } else {
         const spoken = normalize(raw);
@@ -384,5 +400,5 @@
 
   setInterval(scan, 180);
   scan();
-  log('v0.5.0 audiobook preview loaded. Same voice; context-sensitive pacing.');
+  log('v0.5.1 audiobook expressive backend enabled (Kokoro fallback).');
 })();
