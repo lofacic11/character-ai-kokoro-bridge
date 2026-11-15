@@ -92,7 +92,7 @@
     const t = narration.toLowerCase();
     if (/\b(whisper|whispers|whispered|murmur|murmurs|murmured|purr|purring|softly|low voice|quietly)\b/.test(t))
       return 'soft';
-    if (/\b(gasp|gasps|gasped|breathless|heavy breath|jagged breath|pant|pants|hitch|hitches|shak|trembl|groan|groans)\b/.test(t))
+    if (/\b(gasp|gasps|gasped|breathless|heavy breath|jagged breath|breathing becomes jagged|ragged breath|pant|pants|hitch|hitches|shak|trembl|groan|groans)\b/.test(t))
       return 'strained';
     if (/\b(shout|shouts|shouted|scream|screams|screamed|yell|yells|urgently|furious|angrily)\b/.test(t))
       return 'urgent';
