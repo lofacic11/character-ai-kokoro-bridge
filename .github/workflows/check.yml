@@ -1,0 +1,13 @@
+name: Syntax checks
+on:
+  push:
+  pull_request:
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check userscript JavaScript
+        run: node --check character-ai-kokoro.user.js
+      - name: Check server Python syntax
+        run: python -m py_compile server.py
