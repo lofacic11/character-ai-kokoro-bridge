@@ -7,6 +7,8 @@ export HOME="$TMP/home"
 mkdir -p "$HOME/AI/tts/kokoro/.venv/bin" "$TMP/bin"
 printf "placeholder\n" > "$HOME/AI/tts/kokoro/server.py"
 printf "# mocked activation\n" > "$HOME/AI/tts/kokoro/.venv/bin/activate"
+printf "#!/bin/sh\nexit 0\n" > "$HOME/AI/tts/kokoro/.venv/bin/uvicorn"
+chmod +x "$HOME/AI/tts/kokoro/.venv/bin/uvicorn"
 cat > "$TMP/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 printf '{"status":"ready"}\n'
