@@ -161,3 +161,52 @@ test('does not synthesize unfinished trailing sentence while streaming', () => {
   x.tick(1000);
   assert.equal(x.requests.length,1);
 });
+
+
+test('audiobook reads narration and quoted dialogue in order with the same voice', () => {
+  const x = setup();
+  const msg = x.message(['*Kafka takes a breath.* "Please stay." *She whispers softly.*'], true);
+  x.root.children.unshift(x.group(msg));
+  x.tick(); x.tick(700);
+  assert.equal(x.requests.length, 3);
+  const actual = x.requests.map(r => JSON.parse(r.opts.data));
+  assert.deepEqual(actual.map(r => r.text), [
+    'Kafka takes a breath.', 'Please stay.', 'She whispers softly.'
+  ]);
+  assert.deepEqual(actual.map(r => r.voice), ['af_heart', 'af_heart', 'af_heart']);
+  assert.equal(actual[1].speed, 0.86, 'trailing whispered cue affects prior quote');
+  assert.equal(actual[0].speed, 1.0, 'narration remains neutral');
+});
+
+test('holds quoted dialogue until the following stage direction arrives', () => {
+  const x = setup();
+  let line = '*She looks away.* "Stay here."';
+  const msg = x.message([line], false);
+  x.root.children.unshift(x.group(msg)); x.tick();
+  assert.equal(x.requests.length, 1);
+  assert.equal(JSON.parse(x.requests[0].opts.data).text, 'She looks away.');
+  const prose = msg.querySelector('.prose');
+  prose.children[0].innerText = line + ' *She whispers, trembling.*';
+  prose.innerText = prose.children[0].innerText;
+  x.tick();
+  assert.equal(x.requests.length, 3);
+  const spoken = x.requests.map(r => JSON.parse(r.opts.data));
+  assert.equal(spoken[1].text, 'Stay here.');
+  assert.equal(spoken[1].speed, 0.86);
+});
+
+test('persists expressive dialogue pacing across narration segments', () => {
+  const x = setup();
+  const msg = x.message(['*Her breathing becomes jagged.* "I need help." *She turns away.* "Please stay."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  const spoken = x.requests.map(r => JSON.parse(r.opts.data));
+  assert.deepEqual(spoken.filter(r => r.text.includes('help') || r.text.includes('stay')).map(r => r.speed), [0.9, 0.9]);
+});
+
+test('RP sounds are normalized only in TTS requests', () => {
+  const x = setup();
+  const msg = x.message(['*She groans.* "Mhm... Mmff."'], true);
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  assert.equal(JSON.parse(x.requests[1].opts.data).text, 'mm-hmm... mmm.');
+  assert.equal(msg.querySelector('.prose').innerText, '*She groans.* "Mhm... Mmff."');
+});
