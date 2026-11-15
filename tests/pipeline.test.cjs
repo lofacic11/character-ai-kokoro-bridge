@@ -168,6 +168,8 @@ test('audiobook reads narration and quoted dialogue in order with the same voice
   const msg = x.message(['*Kafka takes a breath.* "Please stay." *She whispers softly.*'], true);
   x.root.children.unshift(x.group(msg));
   x.tick(); x.tick(700);
+  assert.equal(x.requests.length, 2, 'prefetch is capped at two synthesis requests');
+  x.finish(x.requests[0]);
   assert.equal(x.requests.length, 3);
   const actual = x.requests.map(r => JSON.parse(r.opts.data));
   assert.deepEqual(actual.map(r => r.text), [
@@ -189,6 +191,8 @@ test('holds quoted dialogue until the following stage direction arrives', () => 
   prose.children[0].innerText = line + ' *She whispers, trembling.*';
   prose.innerText = prose.children[0].innerText;
   x.tick();
+  assert.equal(x.requests.length, 2, 'prefetch is capped at two synthesis requests');
+  x.finish(x.requests[0]);
   assert.equal(x.requests.length, 3);
   const spoken = x.requests.map(r => JSON.parse(r.opts.data));
   assert.equal(spoken[1].text, 'Stay here.');
@@ -199,6 +203,7 @@ test('persists expressive dialogue pacing across narration segments', () => {
   const x = setup();
   const msg = x.message(['*Her breathing becomes jagged.* "I need help." *She turns away.* "Please stay."'], true);
   x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  for (let i = 0; i < x.requests.length; i++) x.finish(x.requests[i]);
   const spoken = x.requests.map(r => JSON.parse(r.opts.data));
   assert.deepEqual(spoken.filter(r => r.text.includes('help') || r.text.includes('stay')).map(r => r.speed), [0.9, 0.9]);
 });
