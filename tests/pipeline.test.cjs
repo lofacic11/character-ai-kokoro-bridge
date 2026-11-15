@@ -253,3 +253,29 @@ test('failed old expressive callback cannot restart audio after cancellation', (
   request.opts.onerror({status: 0});
   assert.equal(x.requests.length, 2, 'no retries should occur after stop');
 });
+
+
+test('preserves rendered italic HTML stage directions as emotional context', () => {
+  const x = setup();
+  const proseChild = {
+    tagName: 'P',
+    nodeType: 1,
+    childNodes: [
+      {nodeType: 1, tagName: 'EM', childNodes: [
+        {nodeType: 3, textContent: 'She whispers softly.'}
+      ]},
+      {nodeType: 3, textContent: ' "Stay with me."'},
+    ],
+  };
+  const msg = x.message(['ignored text'], true);
+  const prose = msg.querySelector('.prose');
+  prose.children = [proseChild];
+  prose.innerText = 'She whispers softly. "Stay with me."';
+  x.root.children.unshift(x.group(msg)); x.tick(); x.tick(700);
+  const segments = x.requests.map(req => JSON.parse(req.opts.data));
+  assert.equal(segments[0].text, 'She whispers softly.');
+  assert.equal(segments[0].kind, 'narration');
+  assert.equal(segments[1].text, 'Stay with me.');
+  assert.equal(segments[1].kind, 'dialogue');
+  assert.equal(segments[1].direction, 'soft');
+});
