@@ -18,6 +18,7 @@
   const KOKORO_ENDPOINT = 'http://127.0.0.1:8880/speak';
   const EXPRESSIVE_ENDPOINT = 'http://127.0.0.1:8881/speak';
   const USE_EXPRESSIVE = true; // Set false to force Kokoro.
+  let expressiveRetryAt = 0; // Avoid retrying a failing GPU server for every line.
   const VOICE = 'af_heart';
   const PREFIX = '[c.ai Audiobook]';
   const log = (...args) => console.log(PREFIX, ...args);
@@ -202,7 +203,8 @@
     const retryOrFail = message => {
       if (run !== generation || p !== pipeline) return;
       if (!retried && USE_EXPRESSIVE && endpoint === EXPRESSIVE_ENDPOINT) {
-        log('Expressive TTS unavailable; retrying with Kokoro:', message);
+        expressiveRetryAt = Date.now() + 60000;
+        log('Expressive TTS unavailable; using Kokoro for 60 seconds:', message);
         requestBlock(p, run, item, KOKORO_ENDPOINT, true);
       } else {
         item.status = 'failed';
@@ -247,7 +249,7 @@
       item.status = 'loading';
       item.requestedAt = Date.now();
       capacity--;
-      requestBlock(p, run, item, USE_EXPRESSIVE ? EXPRESSIVE_ENDPOINT : KOKORO_ENDPOINT);
+      requestBlock(p, run, item, USE_EXPRESSIVE && Date.now() >= expressiveRetryAt ? EXPRESSIVE_ENDPOINT : KOKORO_ENDPOINT);
       log('Generating block', p.items.indexOf(item) + 1,
         'kind=', item.kind, 'direction=', item.direction);
     }
