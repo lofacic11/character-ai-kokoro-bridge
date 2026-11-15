@@ -22,9 +22,6 @@
   let enabled = true;
   let initialized = false;
   let activeGroup = null;
-  let completedText = '';
-  let completedSince = 0;
-  let spokenGroup = null;
   let generation = 0;
   let pipeline = null;
   let audio = null;
@@ -71,7 +68,7 @@
   }
 
   function normalize(s) {
-    return s.replace(/\\s+/g,' ').replace(/[*_`#]/g,'').trim();
+    return s.replace(/\s+/g,' ').replace(/[*_`#]/g,'').trim();
   }
 
   function paragraphs(prose) {
@@ -80,7 +77,7 @@
       .filter(Boolean);
     if (blocks.length < 2) {
       const fallback = (prose.innerText || prose.textContent || '')
-        .split(/\\n\\s*\\n/).map(normalize).filter(Boolean);
+        .split(/\n\s*\n/).map(normalize).filter(Boolean);
       if (fallback.length > blocks.length) blocks = fallback;
     }
     return blocks;
@@ -203,7 +200,7 @@
     if (!prose) return;
     const blocks = paragraphs(prose);
     const complete = message.getAttribute('data-testid') === 'completed-message';
-    const full = blocks.join('\\n\\n');
+    const full = blocks.join('\n\n');
     if (complete) {
       if (p.stableText !== full) {p.stableText=full;p.stableSince=Date.now();}
     } else {p.stableText='';p.stableSince=0;}
