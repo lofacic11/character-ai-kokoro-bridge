@@ -83,6 +83,11 @@ exec bash "${SOURCE_DIR:-$BOOTSTRAP_DIR}/install.sh" "\$@"
 EOF
 chmod +x "$BIN_DIR/kokoro-cai"
 
+# Install/update the foreground start-kokoro shortcut on every invocation.
+if [[ -n "$SOURCE_DIR" && -f "$SOURCE_DIR/scripts/install-shortcut.sh" ]]; then
+  bash "$SOURCE_DIR/scripts/install-shortcut.sh"
+fi
+
 if health; then
   say "Kokoro is already running: $HEALTH"
   if [[ -n "$SOURCE_DIR" && -f "$SOURCE_DIR/character-ai-kokoro.user.js" ]]; then

@@ -37,6 +37,42 @@ bash install.sh
 
 For future source updates, navigate to the clone and run `git pull --ff-only` (the one-liner reuses its existing clone rather than silently upgrading code).
 
+## Interactive foreground `start-kokoro` shortcut
+
+The automatic installer also installs `~/.local/bin/start-kokoro` as an alternative to `kokoro-cai`. This follows the familiar manual workflow:
+
+```bash
+cd ~/AI/tts/kokoro
+source .venv/bin/activate
+uvicorn server:app --host 127.0.0.1 --port 8880
+```
+
+The shortcut locates your runtime automatically, activates the virtual environment and runs Uvicorn in the **foreground**, with logs shown in the terminal. Stop it using **Ctrl+C**.
+
+```bash
+start-kokoro
+```
+
+If you cloned the repository but already installed Kokoro yourself, install only the shortcut (without reinstalling the model):
+
+```bash
+bash scripts/install-shortcut.sh
+source ~/.bashrc
+start-kokoro
+```
+
+The setup copies `scripts/start-kokoro.sh` into `~/.local/bin/start-kokoro`, marks it executable, and adds `~/.local/bin` to `~/.bashrc` without repeating the PATH entry.
+
+Troubleshooting:
+
+- **No such file or directory:** the script was not installed; run `bash scripts/install-shortcut.sh`.
+- **Permission denied:** `chmod +x ~/.local/bin/start-kokoro`, or reinstall the shortcut.
+- **Command not found:** run `source ~/.bashrc`, open a new terminal, or invoke `~/.local/bin/start-kokoro`.
+- **Address already in use:** another service occupies port 8880; check it first with `curl -fsS http://127.0.0.1:8880/health`. Avoid running two Uvicorn processes.
+- **Missing Python environment:** run `bash install.sh` first, or finish the manual server setup.
+
+This shortcut and `kokoro-cai` use the same API. `start-kokoro` does **not** set up a systemd service or auto-start at login.
+
 ## Required browser setup (cannot be automated safely)
 
 1. Install **Tampermonkey** from [tampermonkey.net](https://www.tampermonkey.net/) / the Chrome Web Store for **Brave**. Brave supports Chrome extensions.

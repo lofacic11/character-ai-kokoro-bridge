@@ -37,6 +37,26 @@ If you already manually started the server, stop it with Ctrl+C before using `re
 
 If `git` or `curl` is not available, install those first using `sudo apt install git curl`. You can alternatively clone and inspect the repository and run `bash install.sh` from the clone. For full details see [installation guide](docs/INSTALL.md) and [manual server setup](docs/SERVER-SETUP.md).
 
+## Optional foreground launcher: `start-kokoro`
+
+For users who prefer the original interactive server workflow (`cd ~/AI/tts/kokoro && source .venv/bin/activate && uvicorn server:app --host 127.0.0.1 --port 8880`), the installer now also creates a **`start-kokoro`** shortcut.
+
+```bash
+start-kokoro                     # run Uvicorn in the current terminal
+# Press Ctrl+C to stop.
+```
+
+The launcher selects your existing `~/AI/tts/kokoro` runtime or the installer-created runtime, activates its virtual environment and starts the local API on port 8880. It checks for an already healthy service before starting another instance. To verify the shortcut:
+
+```bash
+command -v start-kokoro
+curl -fsS http://127.0.0.1:8880/health
+```
+
+If your shell says `start-kokoro: command not found`, open a new terminal or run `source ~/.bashrc`. If your copy says `Permission denied`, run `chmod +x ~/.local/bin/start-kokoro` (or reinstall the shortcut). The reusable setup helper is `bash scripts/install-shortcut.sh`, which safely copies the shortcut to `~/.local/bin`, enables execute permission and adds that directory to `~/.bashrc` once.
+
+**Choose one startup mode:** `start-kokoro` runs in the foreground until Ctrl+C, whereas `kokoro-cai` runs in the background. If a server was manually started already, `kokoro-cai stop` will not kill it. See [installation instructions](docs/INSTALL.md#interactive-foreground-start-kokoro-shortcut).
+
 ## Brave extension and userscript import (required once)
 
 The shell installer **cannot install or enable browser extensions**. Complete these browser-side steps:
