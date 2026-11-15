@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Character.AI -> Local Kokoro (Pipelined Speech Blocks)
+// @name         Character.AI -> Local Kokoro (Audiobook Preview)
 // @namespace    local.kokoro.characterai
-// @version      0.4.1
-// @description  Synthesizes completed sentences or paragraphs early; plays speech blocks in order.
+// @version      0.5.0
+// @description  One-voice audiobook narration with contextual dialogue pacing and pipelined playback.
 // @match        https://character.ai/*
 // @match        https://*.character.ai/*
 // @grant        GM_xmlhttpRequest
@@ -31,6 +31,7 @@
   const PREFETCH = 2;
   const SETTLE_MS = 650;
   const MIN_BLOCK_CHARS = 10;
+  const AUDIOBOOK_MODE = true; // v0.5 preview: Kokoro uses pacing, not true expressive vocal acting.
 
   const initialGroups = new WeakSet();
 
@@ -72,13 +73,105 @@
     return s.replace(/\s+/g,' ').replace(/[*_`#]/g,'').trim();
   }
 
+  // Preserve roleplay markup in the source; only strip it from spoken segments.
+  function normalizeLayout(s) {
+    return (s || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function spokenText(s) {
+    const variants = {
+      mhm: 'mm-hmm', mmhm: 'mm-hmm', mmhmm: 'mm-hmm',
+      mmff: 'mmm', mmfff: 'mmm', mmph: 'mmm', mmpph: 'mmm',
+      mghh: 'ugh', nghh: 'ugh', hngh: 'ugh', hnghh: 'ugh'
+    };
+    return normalize(s).replace(/\b(?:mhm|mmhm|mmhmm|mmfff?|mmpp?h|mghh|nghh|hnghh?)\b/gi,
+      word => variants[word.toLowerCase()] || word);
+  }
+
+  function detectDirection(narration) {
+    const t = narration.toLowerCase();
+    if (/\b(whisper|whispers|whispered|murmur|murmurs|murmured|purr|purring|softly|low voice|quietly)\b/.test(t))
+      return 'soft';
+    if (/\b(gasp|gasps|gasped|breathless|heavy breath|jagged breath|pant|pants|hitch|hitches|shak|trembl|groan|groans)\b/.test(t))
+      return 'strained';
+    if (/\b(shout|shouts|shouted|scream|screams|screamed|yell|yells|urgently|furious|angrily)\b/.test(t))
+      return 'urgent';
+    if (/\b(calmly|relaxed|composed|steady voice)\b/.test(t)) return 'neutral';
+    return null;
+  }
+
+  function deliverySpeed(direction) {
+    return direction === 'soft' ? 0.86 : direction === 'strained' ? 0.9 :
+      direction === 'urgent' ? 1.13 : 1.0;
+  }
+
+  // One voice for both narration and dialogue. A following action tag can
+  // direct its preceding quote; state persists for subsequent dialogue.
+  function audiobookSegments(raw, state) {
+    const tokens = [];
+    const regex = /\*([^*]+)\*|"([^"]+)"|“([^”]+)”/g;
+    let cursor = 0, match;
+    while ((match = regex.exec(raw))) {
+      if (match.index > cursor) {
+        const gap = raw.slice(cursor, match.index).trim();
+        if (gap) tokens.push({kind: 'narration', text: gap});
+      }
+      tokens.push({kind: match[1] !== undefined ? 'narration' : 'dialogue',
+        text: (match[1] ?? match[2] ?? match[3]).trim()});
+      cursor = regex.lastIndex;
+    }
+    const tail = raw.slice(cursor).trim();
+    if (tail) tokens.push({kind:'narration', text:tail});
+    const segments = [];
+    let direction = state.direction || 'neutral';
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token.kind === 'narration') {
+        const hint = detectDirection(token.text);
+        if (hint) direction = hint;
+      }
+      const next = tokens[i + 1];
+      const trailing = token.kind === 'dialogue' && next?.kind === 'narration'
+        ? detectDirection(next.text) : null;
+      if (trailing) direction = trailing;
+      const text = spokenText(token.text);
+      if (text.length > 1) segments.push({text, kind:token.kind,
+        direction:token.kind === 'dialogue' ? direction : 'neutral',
+        speed:token.kind === 'dialogue' ? deliverySpeed(direction) : 1.0});
+    }
+    state.direction = direction;
+    return segments;
+  }
+
+  // A quoted line must not be synthesized until a possible trailing *said in
+  // a whisper* cue is available. Commit only complete markup structures.
+  function audiobookBoundary(text) {
+    if (!text.includes('*') && !text.includes('"') && !text.includes('“')) {
+      return safeBoundary(text);
+    }
+    let inAction = false, inQuote = false, inCurly = false, end = 0;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (c === '*' && !inQuote && !inCurly) {
+        inAction = !inAction;
+        if (!inAction) end = i + 1;
+      } else if (c === '"' && !inAction && !inCurly) {
+        inQuote = !inQuote;
+      } else if (c === '“' && !inAction && !inQuote) inCurly = true;
+      else if (c === '”' && inCurly) inCurly = false;
+    }
+    // Avoid premature quote delivery: emit only the preceding action block,
+    // or a completed action tag following the quote.
+    return end;
+  }
+
   function paragraphs(prose) {
     let blocks = [...prose.children]
-      .map(el => normalize(el.innerText || el.textContent || ''))
+      .map(el => normalizeLayout(el.innerText || el.textContent || ''))
       .filter(Boolean);
     if (blocks.length < 2) {
       const fallback = (prose.innerText || prose.textContent || '')
-        .split(/\n\s*\n/).map(normalize).filter(Boolean);
+        .split(/\n\s*\n/).map(normalizeLayout).filter(Boolean);
       if (fallback.length > blocks.length) blocks = fallback;
     }
     return blocks;
@@ -86,18 +179,19 @@
 
   function startPipeline(group) {
     pipeline = {group, emittedRaw: '', items: [], next: 0, stableText: '',
-      stableSince: 0, finished: false, playing: false, startedAt: Date.now()};
+      stableSince: 0, finished: false, playing: false, startedAt: Date.now(),
+      voiceState: {direction: 'neutral'}};
   }
 
-  function addParagraph(p, text) {
-    text = normalize(text);
+  function addParagraph(p, text, speed = 1.0, kind = 'narration') {
+    text = spokenText(text);
     while (text.length > 2000) {
       let split = text.lastIndexOf(' ', 2000);
       if (split < 1000) split = 2000;
-      p.items.push({text: text.slice(0, split), status: 'queued', url: null});
+      p.items.push({text: text.slice(0, split), speed, kind, status: 'queued', url: null});
       text = text.slice(split).trim();
     }
-    if (text.length > 1) p.items.push({text, status: 'queued', url: null});
+    if (text.length > 1) p.items.push({text, speed, kind, status: 'queued', url: null});
   }
 
   function pump(p, run) {
@@ -113,7 +207,7 @@
       req = GM_xmlhttpRequest({
         method: 'POST', url: ENDPOINT,
         headers: {'Content-Type': 'application/json'},
-        data: JSON.stringify({text:item.text,voice:VOICE,speed:1.0}),
+        data: JSON.stringify({text:item.text,voice:VOICE,speed:item.speed}),
         responseType:'blob',timeout:60000,
         onload: res => {
           requests.delete(req);
@@ -232,14 +326,17 @@
       clearPlayback(); startPipeline(group); return;
     }
     const remainder = full.slice(p.emittedRaw.length);
-    let boundary = settled ? remainder.length : safeBoundary(remainder);
+    let boundary = settled ? remainder.length :
+      AUDIOBOOK_MODE ? audiobookBoundary(remainder) : safeBoundary(remainder);
     if (boundary > 0) {
       const raw = remainder.slice(0, boundary);
-      const spoken = normalize(raw);
-      if (spoken.length > 1) {
-        addParagraph(p, spoken);
-        log('Queued block',p.items.length,'chars=',spoken.length,
-          'since_reply_ms=', Date.now()-p.startedAt);
+      if (AUDIOBOOK_MODE) {
+        const parts = audiobookSegments(raw, p.voiceState);
+        for (const part of parts) addParagraph(p, part.text, part.speed, part.kind);
+        log('Queued audiobook segments', parts.length, 'since_reply_ms=', Date.now()-p.startedAt);
+      } else {
+        const spoken = normalize(raw);
+        if (spoken.length > 1) addParagraph(p, spoken);
       }
       p.emittedRaw += raw;
     }
@@ -287,5 +384,5 @@
 
   setInterval(scan, 180);
   scan();
-  log('v0.4.1 loaded. Completed sentences and paragraphs are synthesized early.');
+  log('v0.5.0 audiobook preview loaded. Same voice; context-sensitive pacing.');
 })();
