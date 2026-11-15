@@ -12,8 +12,10 @@ jobs:
       - name: Run paragraph pipeline regression tests
         run: node --test tests/*.test.cjs
       - name: Validate Ubuntu installer syntax
-        run: bash -n install.sh tests/install-smoke.sh
+        run: bash -n install.sh tests/install-smoke.sh scripts/*.sh tests/start-shortcut-smoke.sh
       - name: Installer reuse and lifecycle smoke test
         run: bash tests/install-smoke.sh
+      - name: Start-kokoro shortcut smoke test
+        run: bash tests/start-shortcut-smoke.sh
       - name: Check server Python syntax
         run: python -m py_compile server.py
