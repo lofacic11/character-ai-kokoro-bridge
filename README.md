@@ -2,7 +2,7 @@
 
 A lightweight Tampermonkey userscript that automatically reads **Character.AI replies paragraph by paragraph** aloud using your own **local Kokoro ONNX TTS server**. No Character.AI credentials or unofficial API required.
 
-> **Status:** v0.4.1 (feature branch). Tested by the project creator in Brave on Ubuntu with a local Kokoro server. This is an independent, unofficial project; not affiliated with Character.AI or Kokoro.
+> **Status:** v0.4.1 (tested with Brave on Ubuntu). Tested by the project creator in Brave on Ubuntu with a local Kokoro server. This is an independent, unofficial project; not affiliated with Character.AI or Kokoro.
 
 ## Features
 
@@ -14,23 +14,42 @@ A lightweight Tampermonkey userscript that automatically reads **Character.AI re
 - 🎛️ On/off, **Test voice**, and **Stop** controls in the browser.
 - 🔒 Talks only to your local `127.0.0.1:8880` server.
 
-## Requirements
+## One-command Ubuntu installation
 
-- Linux (tested on Ubuntu) or another OS with a compatible Kokoro API.
-- Brave/Chrome with Tampermonkey and **Allow User Scripts** enabled.
-- [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) and a local FastAPI server compatible with [`docs/API.md`](docs/API.md).
-- Your local server must be running at `http://127.0.0.1:8880`.
+For a fresh Ubuntu system, with `git` and `curl` installed, run:
 
-## Quick start
+```bash
+curl -fsSL https://raw.githubusercontent.com/lofacic11/character-ai-kokoro-bridge/main/install.sh | bash
+```
 
-1. Set up the local TTS server using [Kokoro server setup](docs/SERVER-SETUP.md).
-2. Test it: visit `http://127.0.0.1:8880/health` (expect `{ "status": "ready", "model": "kokoro-82m" }`).
-3. Install [Tampermonkey](https://www.tampermonkey.net/) in Brave. In `brave://extensions`, open Tampermonkey details and enable **Allow User Scripts**. Permit the extension on `character.ai`.
-4. Import [`character-ai-kokoro.user.js`](character-ai-kokoro.user.js) in Tampermonkey (Dashboard → Utilities → Import from file), or paste the source into a new script and save.
-5. **Disable previous versions** of this bridge, especially v0.1/v0.2, to prevent duplicate playback.
-6. Open [Character.AI](https://character.ai/), refresh the chat, and click **Test voice**. Then send a new message; multi-paragraph replies can start speaking before Character.AI completes the final paragraph.
+**Review the script before running downloaded shell code:** [install.sh](install.sh). The installer clones this repository into `~/.local/share/character-ai-kokoro-bridge`, installs Ubuntu libraries and a Python virtual environment if needed, downloads Kokoro model assets (approximately 340 MB), and starts the loopback-only server. It may prompt for your sudo password to install system dependencies. It **reuses** an existing complete `~/AI/tts/kokoro` setup and never overwrites its `server.py`.
 
-If your browser blocks downloads of `.user.js`, use the archived script in [`dist/`](dist/) and extract it locally.
+Re-running the same command starts the service if stopped; if healthy it avoids launching another server. A shortcut command is also installed at `~/.local/bin/kokoro-cai`:
+
+```bash
+~/.local/bin/kokoro-cai           # start / reuse
+~/.local/bin/kokoro-cai status    # check API
+~/.local/bin/kokoro-cai stop      # stop only launcher-managed process
+~/.local/bin/kokoro-cai restart   # restart the managed process
+```
+
+If you already manually started the server, stop it with Ctrl+C before using `restart`. The launcher does not kill processes it doesn't manage. Server logs: `~/.local/share/character-ai-kokoro/server.log`. Check `http://127.0.0.1:8880/health`.
+
+If `git` or `curl` is not available, install those first using `sudo apt install git curl`. You can alternatively clone and inspect the repository and run `bash install.sh` from the clone. For full details see [installation guide](docs/INSTALL.md) and [manual server setup](docs/SERVER-SETUP.md).
+
+## Brave extension and userscript import (required once)
+
+The shell installer **cannot install or enable browser extensions**. Complete these browser-side steps:
+
+1. Install **[Tampermonkey](https://www.tampermonkey.net/)** from the Chrome Web Store into **Brave**. No second extension is required.
+2. In Brave open `brave://extensions` → **Tampermonkey** → **Details** → enable **Allow User Scripts**. Allow Tampermonkey **site access** on `character.ai`.
+3. Click Tampermonkey → **Dashboard** → **Utilities** → **Import from file**. Select:
+   `~/.local/share/character-ai-kokoro/character-ai-kokoro.user.js`
+   (this file is placed by the installer). Alternatively download [the userscript](character-ai-kokoro.user.js) from GitHub and import it.
+4. On the Tampermonkey confirmation page select **Install**. Disable any older copies of the bridge to prevent double playback.
+5. Reload [Character.AI](https://character.ai/). Click **Test voice**, then send a message and let the character reply.
+
+The imported userscript runs in Brave; **the Python service runs locally on your laptop**. If the Tampermonkey button appears but nothing plays, inspect Brave's console (`Ctrl+Shift+J`) and see [troubleshooting](docs/TROUBLESHOOTING.md). Keep the service bound to `127.0.0.1`; don't expose it on your network.
 
 ## How it works
 
@@ -76,7 +95,7 @@ Voice examples include `af_heart`, `af_bella`, `am_michael`, and `am_adam` (avai
 | Test voice works, auto voice fails | Character.AI markup changed; inspect `#chat-messages` and `data-testid` message elements |
 | Nothing on `http://127.0.0.1:8880/` | Expected: FastAPI root `/` is not defined; use `/health` or `/docs` |
 | Browser `fetch` gets CORS error | The bridge uses `GM_xmlhttpRequest`, not ordinary page `fetch`; plain console `fetch` is not a reliable test |
-| Reply silently skipped | Check console for the 2,000-character limit or changed DOM selectors |
+| Reply silently skipped | Check browser console for message selectors and Kokoro request errors |
 | Two voices overlap | Disable older bridge versions in Tampermonkey |
 
 More details: [troubleshooting](docs/TROUBLESHOOTING.md).
