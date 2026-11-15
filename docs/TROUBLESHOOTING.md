@@ -1,12 +1,14 @@
 # Troubleshooting
 
+For automatic installation and Tampermonkey import, see [INSTALL.md](INSTALL.md).
+
 ## No button in Character.AI
 
 In Brave, open `brave://extensions` → Tampermonkey → Details → **Allow User Scripts**. Confirm the script is enabled, Tampermonkey has `character.ai` site access, and reload the chat.
 
 ## Button shows, but no audio
 
-1. Start the server: `cd ~/AI/tts/kokoro && source .venv/bin/activate && uvicorn server:app --host 127.0.0.1 --port 8880`.
+1. Start the server using `~/.local/bin/kokoro-cai`, or if you installed manually run `cd ~/AI/tts/kokoro && source .venv/bin/activate && uvicorn server:app --host 127.0.0.1 --port 8880`.
 2. Check `http://127.0.0.1:8880/health` returns HTTP 200.
 3. Click **Test voice** in the Character.AI overlay.
 4. Look for `POST /speak` in the server terminal and `[c.ai Kokoro]` errors in the Brave console (`Ctrl+Shift+J`).
@@ -22,11 +24,11 @@ A manual `fetch()` from `https://character.ai` to localhost may fail with a CORS
 
 ## Long response ignored
 
-The v0.3 script sends one request for each completed reply and refuses messages longer than 2,000 characters. This avoids truncation and unexpected synthesis splitting. To support longer replies, change both the server input validation and browser length limit after testing model stability.
+The v0.4.1 script streams complete sentences or paragraphs as audio blocks and splits blocks longer than 2,000 characters. An unfinished last sentence waits until Character.AI marks the reply complete. Use the browser console logs to inspect when blocks are queued and synthesized.
 
 ## Two voices playing
 
-Keep just one enabled instance of the userscript in Tampermonkey. Disable v0.1 and v0.2.
+Keep just one enabled instance of the userscript in Tampermonkey. Disable all older releases, including v0.3 and v0.4.0.
 
 ## Debugging without exposing private chats
 

@@ -1,5 +1,10 @@
 # Local Kokoro server setup (Ubuntu)
 
+**Recommended:** Use the automatic [one-command installer](INSTALL.md). The manual procedure below is for customization or troubleshooting.
+
+If you already have a working installation at `~/AI/tts/kokoro`, the installer reuses it without overwriting its `server.py`.
+
+
 This project uses the [`kokoro-onnx`](https://github.com/thewh1teagle/kokoro-onnx) Python package and a tiny FastAPI wrapper. The default server runs on the CPU, leaving your NVIDIA GPU available for an LLM.
 
 ## 1. Install dependencies

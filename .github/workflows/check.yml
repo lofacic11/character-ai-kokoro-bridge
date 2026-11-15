@@ -9,5 +9,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check userscript JavaScript
         run: node --check character-ai-kokoro.user.js
+      - name: Run paragraph pipeline regression tests
+        run: node --test tests/*.test.cjs
+      - name: Validate Ubuntu installer syntax
+        run: bash -n install.sh tests/install-smoke.sh
+      - name: Installer reuse and lifecycle smoke test
+        run: bash tests/install-smoke.sh
       - name: Check server Python syntax
         run: python -m py_compile server.py
