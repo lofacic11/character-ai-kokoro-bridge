@@ -1,13 +1,14 @@
 # Character.AI → Local Kokoro TTS Bridge
 
-A lightweight Tampermonkey userscript that automatically reads **completed Character.AI replies** aloud using your own **local Kokoro ONNX TTS server**. No Character.AI credentials or unofficial API required.
+A lightweight Tampermonkey userscript that automatically reads **Character.AI replies paragraph by paragraph** aloud using your own **local Kokoro ONNX TTS server**. No Character.AI credentials or unofficial API required.
 
-> **Status:** v0.3.0. Tested by the project creator in Brave on Ubuntu with a local Kokoro server. This is an independent, unofficial project; not affiliated with Character.AI or Kokoro.
+> **Status:** v0.4.0 (feature branch). Tested by the project creator in Brave on Ubuntu with a local Kokoro server. This is an independent, unofficial project; not affiliated with Character.AI or Kokoro.
 
 ## Features
 
-- 🔊 Reads a complete character reply **after** Character.AI finishes generating it (not sentence-by-sentence).
+- 🔊 Starts synthesizing a paragraph **when the next paragraph appears**; plays ready paragraphs in sequence while subsequent paragraphs synthesize. A single paragraph waits for reply completion.
 - 🧠 Uses local Kokoro ONNX TTS; default English voice `af_heart`.
+- 🚀 Prefetches up to two audio blocks while keeping playback strictly ordered.
 - ⏹️ Interrupts the previous audio when a newer character reply arrives.
 - 🔁 Ignores already-loaded chat history to avoid speaking old messages.
 - 🎛️ On/off, **Test voice**, and **Stop** controls in the browser.
@@ -27,25 +28,35 @@ A lightweight Tampermonkey userscript that automatically reads **completed Chara
 3. Install [Tampermonkey](https://www.tampermonkey.net/) in Brave. In `brave://extensions`, open Tampermonkey details and enable **Allow User Scripts**. Permit the extension on `character.ai`.
 4. Import [`character-ai-kokoro.user.js`](character-ai-kokoro.user.js) in Tampermonkey (Dashboard → Utilities → Import from file), or paste the source into a new script and save.
 5. **Disable previous versions** of this bridge, especially v0.1/v0.2, to prevent duplicate playback.
-6. Open [Character.AI](https://character.ai/), refresh the chat, and click **Test voice**. Then send a new message and wait for the full character reply.
+6. Open [Character.AI](https://character.ai/), refresh the chat, and click **Test voice**. Then send a new message; multi-paragraph replies can start speaking before Character.AI completes the final paragraph.
 
 If your browser blocks downloads of `.user.js`, use the archived script in [`dist/`](dist/) and extract it locally.
 
 ## How it works
 
 ```text
-Character.AI DOM (#chat-messages)
-   └─ newly added character message
-      └─ [data-testid="completed-message"]
-         └─ settle for 650 ms
-            └─ Tampermonkey GM_xmlhttpRequest POST /speak
-               └─ local Kokoro generates WAV
-                  └─ browser plays WAV
+Character.AI streaming reply
+  paragraph 1 completed (paragraph 2 starts)
+     → synthesize paragraph 1 immediately
+  paragraph 2 completed (paragraph 3 starts)
+     → synthesize paragraph 2 while paragraph 1 plays
+  final paragraph
+     → wait for completed-message + 650 ms settle
+     → synthesize final paragraph
+  playback queue → always play in original order
 ```
 
-The script polls the DOM every 180 ms, checks message alignment to distinguish characters from users, and waits for a stable completed message. An existing ongoing TTS request/audio is cancelled when a newer character message is detected.
+The bridge polls `#chat-messages` every 180 ms and identifies bot messages using the known message alignment and `data-testid` structure. A paragraph is treated as complete only after a following non-empty paragraph appears, or after the complete reply settles for 650 ms. Multiple active synthesis requests are capped at **two**. A response with no paragraph break still waits for completion.
 
-**Limitations:** This bridge depends on Character.AI's current page structure and may break when the website changes. Reply detection only inspects the newest few message groups. Responses longer than 2,000 characters are rejected (not truncated or split), matching the supplied server's input limit. Audio starts only after the entire reply and subsequent local synthesis complete. The script is not an official Character.AI API integration.
+**Playback and synthesis are independent:** audio begins as soon as the first block is ready, while the next block may still be generating. Browser playback is serialized to avoid overlapping voices. If a new character reply is detected, playback stops immediately and the bridge discards stale responses. The Kokoro server uses a synthesis lock, so requests are generated sequentially server-side; a cancelled HTTP request may still occupy CPU briefly.
+
+Long blocks exceeding the server's 2,000-character limit are split at word boundaries. Already loaded history is ignored, and no login credentials are collected.
+
+**Limitations:** Character.AI's HTML can change. The app does not necessarily expose every paragraph boundary early. Brief pauses can occur if the next paragraph has not finished generating by the time the previous audio ends. This is paragraph-level pipelining, not true low-latency phoneme streaming. The project is unofficial and should be used in accordance with applicable website terms.
+
+## Development and tests
+
+Run `node --check character-ai-kokoro.user.js` for JavaScript syntax validation, and `node --test tests/*.test.cjs` for the mocked DOM/playback regression suite. Tests cover early paragraph generation, ordered playback, single-paragraph completion, interruption, and Test voice. Manual testing in Brave with Character.AI and Kokoro remains necessary.
 
 ## Configuration
 
