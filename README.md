@@ -2,7 +2,7 @@
 
 A lightweight Tampermonkey userscript that automatically reads **Character.AI replies paragraph by paragraph** aloud using your own **local Kokoro ONNX TTS server**. No Character.AI credentials or unofficial API required.
 
-> **Status:** v0.4.1 (tested with Brave on Ubuntu). Tested by the project creator in Brave on Ubuntu with a local Kokoro server. This is an independent, unofficial project; not affiliated with Character.AI or Kokoro.
+> **Status:** v0.4.2 (RP pronunciation refinement; requires local audio testing). Tested by the project creator in Brave on Ubuntu with a local Kokoro server. This is an independent, unofficial project; not affiliated with Character.AI or Kokoro.
 
 ## Features
 
@@ -90,6 +90,18 @@ The bridge polls `#chat-messages` every 180 ms and identifies bot messages using
 Long blocks exceeding the server's 2,000-character limit are split at word boundaries. Already loaded history is ignored, and no login credentials are collected.
 
 **Limitations:** Character.AI's HTML can change. The app does not necessarily expose every paragraph boundary early. Brief pauses can occur if the next paragraph has not finished generating by the time the previous audio ends. This is sentence/paragraph-level pipelining, not true low-latency phoneme streaming. Character.AI may revise earlier text, forcing a queue reset. The project is unofficial and should be used in accordance with applicable website terms.
+
+## Roleplay vocalizations (v0.4.2)
+
+Some character replies contain nonverbal roleplay sounds that Kokoro ONNX may spell out as separate letters. The bridge now applies a **small, conservative pronunciation dictionary only to the text sent to Kokoro**:
+
+| Written in chat | Sent to Kokoro |
+|---|---|
+| `mhm`, `mmhm`, `mmhmm` | `mm-hmm` |
+| `mmff`, `mmfff`, `mmph`, `mmpph` | `mmm` |
+| `mghh`, `nghh`, `hngh`, `hnghh` | `ugh` |
+
+Only whole tokens are replaced; words containing those sequences are unaffected. The chat content remains untouched, so the streaming queue continues to track original text. These substitutes are **phonetic approximations**, not true sound-effect playback. If a voice still sounds unnatural, adjust the dictionary in `normalizeSpeech()` in `character-ai-kokoro.user.js`. Actual gasps, humming or grunts would require dedicated audio samples or a non-speech audio model.
 
 ## Development and tests
 
