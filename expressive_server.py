@@ -16,7 +16,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 MODEL_ID = os.getenv("QWEN_TTS_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
-SPEAKER = os.getenv("QWEN_TTS_SPEAKER", "Serena")
+SPEAKER = os.getenv("QWEN_TTS_SPEAKER", "serena").strip().lower()
 INFERENCE_LOCK = asyncio.Lock()
 _model = None
 
