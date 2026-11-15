@@ -93,9 +93,9 @@
 
   function detectDirection(narration) {
     const t = narration.toLowerCase();
-    if (/\b(whisper|whispers|whispered|murmur|murmurs|murmured|purr|purring|softly|low voice|quietly)\b/.test(t))
+    if (/\b(whisper\w*|murmur\w*|purr\w*|softly|low voice|quietly)\b/.test(t))
       return 'soft';
-    if (/\b(gasp|gasps|gasped|breathless|heavy breath|jagged breath|breathing becomes jagged|ragged breath|pant|pants|hitch|hitches|shak|trembl|groan|groans)\b/.test(t))
+    if (/\b(gasp|gasps|gasped|breathless|heavy breath|jagged breath|breathing becomes jagged|ragged breath|pant\w*|hitch\w*|shak\w*|trembl\w*|groan\w*)\b/.test(t))
       return 'strained';
     if (/\b(shout|shouts|shouted|scream|screams|screamed|yell|yells|urgently|furious|angrily)\b/.test(t))
       return 'urgent';
@@ -168,9 +168,21 @@
     return end;
   }
 
+  function serializeRoleplay(node) {
+    if (!node) return '';
+    if (node.nodeType === 3) return node.textContent || '';
+    const tag = String(node.tagName || '').toLowerCase();
+    if (tag === 'br') return '\\n';
+    if (node.childNodes && node.childNodes.length) {
+      const text = [...node.childNodes].map(serializeRoleplay).join('');
+      return tag === 'em' || tag === 'i' ? '*' + text + '*' : text;
+    }
+    return node.innerText || node.textContent || '';
+  }
+
   function paragraphs(prose) {
     let blocks = [...prose.children]
-      .map(el => normalizeLayout(el.innerText || el.textContent || ''))
+      .map(el => normalizeLayout(serializeRoleplay(el)))
       .filter(Boolean);
     if (blocks.length < 2) {
       const fallback = (prose.innerText || prose.textContent || '')
