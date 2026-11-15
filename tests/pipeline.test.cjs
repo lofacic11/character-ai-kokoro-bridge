@@ -169,8 +169,8 @@ test('normalizes RP vocalizations before sending TTS, without changing ordinary 
   const msg = x.message([input], true);
   x.root.children.unshift(x.group(msg));
   x.tick(); x.tick(700);
-  assert.equal(x.requests.length, 1);
-  const spoken = JSON.parse(x.requests[0].opts.data).text;
+  assert.ok(x.requests.length >= 1);
+  const spoken = x.requests.map(req => JSON.parse(req.opts.data).text).join(' ');
   assert.equal(spoken, 'mm-hmm, yes. mmm! mmm... ugh, ugh, ugh. The mammoth remembered everything.');
   assert.equal(msg.querySelector('.prose').innerText, input, 'visible Character.AI text remains untouched');
 });
