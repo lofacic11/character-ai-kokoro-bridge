@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 DEST="${XDG_DATA_HOME:-$HOME/.local/share}/character-ai-expressive-tts"
-PYTHON="${PYTHON_BIN:-python3}"
+PYTHON="${PYTHON_BIN:-$(command -v python3.12 || command -v python3)}"
 command -v "$PYTHON" >/dev/null || { echo "Python 3 required" >&2; exit 1; }
 mkdir -p "$DEST"
 if [[ ! -x "$DEST/.venv/bin/python" ]]; then
