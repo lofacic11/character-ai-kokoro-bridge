@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Character.AI -> Local Kokoro (Pipelined Paragraphs)
+// @name         Character.AI -> Local Kokoro (Pipelined Speech Blocks)
 // @namespace    local.kokoro.characterai
-// @version      0.4.0
-// @description  Synthesizes finished paragraphs early and plays them sequentially through local Kokoro.
+// @version      0.4.1
+// @description  Synthesizes completed sentences or paragraphs early; plays speech blocks in order.
 // @match        https://character.ai/*
 // @match        https://*.character.ai/*
 // @grant        GM_xmlhttpRequest
@@ -30,6 +30,7 @@
   const requests = new Set();
   const PREFETCH = 2;
   const SETTLE_MS = 650;
+  const MIN_BLOCK_CHARS = 10;
 
   const initialGroups = new WeakSet();
 
@@ -84,8 +85,8 @@
   }
 
   function startPipeline(group) {
-    pipeline = {group, accepted: [], items: [], next: 0, stableText: '',
-      stableSince: 0, finished: false, playing: false};
+    pipeline = {group, emittedRaw: '', items: [], next: 0, stableText: '',
+      stableSince: 0, finished: false, playing: false, startedAt: Date.now()};
   }
 
   function addParagraph(p, text) {
@@ -106,6 +107,7 @@
       if (capacity <= 0) break;
       if (item.status !== 'queued') continue;
       item.status = 'loading';
+      item.requestedAt = Date.now();
       capacity--;
       let req;
       req = GM_xmlhttpRequest({
@@ -121,7 +123,8 @@
               new Blob([res.response], {type:'audio/wav'});
             item.url = URL.createObjectURL(blob);
             item.status = 'ready';
-            log('Audio ready for block', p.items.indexOf(item)+1);
+            log('Audio ready for block', p.items.indexOf(item)+1,
+              'synthesis_ms=', Date.now()-item.requestedAt);
           } else {
             item.status = 'failed';
             console.error(PREFIX,'Kokoro returned HTTP',res.status);
@@ -160,7 +163,7 @@
     };
     player.onended=done;
     player.onerror=()=>{console.error(PREFIX,'Audio playback error');done();};
-    log('Playing block',p.next);
+    log('Playing block',p.next,'since_reply_ms=',Date.now()-p.startedAt);
     player.play().catch(err=>{console.error(PREFIX,'Playback blocked',err);done();});
   }
 
@@ -193,32 +196,54 @@
     return null;
   }
 
+  function safeBoundary(text) {
+    // Prefer paragraph breaks; otherwise commit a sentence when following
+    // text confirms the punctuation is not still being generated.
+    let end = 0;
+    const para = /\n\s*\n/g;
+    for (const match of text.matchAll(para)) end = Math.max(end, match.index + match[0].length);
+    const sentence = /[.!?]["'”’)]?(?=\s)/g;
+    for (const match of text.matchAll(sentence)) {
+      const position = match.index + match[0].length;
+      const candidate = text.slice(0, position).trim();
+      const tail = text.slice(position).trim();
+      if (!tail || candidate.length < MIN_BLOCK_CHARS) continue;
+      if (/(?:\b(?:Mr|Mrs|Ms|Dr|Prof|St|etc|vs|e\.g|i\.e))\.$/i.test(candidate)) continue;
+      end = Math.max(end, position);
+    }
+    return end;
+  }
+
   function processText(group, message) {
     const p = pipeline;
     if (!p || p.group !== group || p.finished) return;
     const prose = message.querySelector('.prose');
     if (!prose) return;
-    const blocks = paragraphs(prose);
+    const full = paragraphs(prose).join('\n\n');
+    if (!full) return;
     const complete = message.getAttribute('data-testid') === 'completed-message';
-    const full = blocks.join('\n\n');
     if (complete) {
-      if (p.stableText !== full) {p.stableText=full;p.stableSince=Date.now();}
-    } else {p.stableText='';p.stableSince=0;}
+      if (p.stableText !== full) { p.stableText=full; p.stableSince=Date.now(); }
+    } else { p.stableText=''; p.stableSince=0; }
     const settled = complete && Date.now()-p.stableSince >= SETTLE_MS;
-    // A newly started paragraph confirms the preceding paragraph is complete.
-    const safe = settled ? blocks.length : Math.max(0,blocks.length-1);
-    for (let i=0;i<Math.min(safe,p.accepted.length);i++) {
-      if (blocks[i] !== p.accepted[i]) {
-        log('Previously finalized paragraph changed; resetting');
-        clearPlayback();startPipeline(group);return;
+
+    if (!full.startsWith(p.emittedRaw)) {
+      log('Character.AI revised already queued text; resetting pending pipeline');
+      clearPlayback(); startPipeline(group); return;
+    }
+    const remainder = full.slice(p.emittedRaw.length);
+    let boundary = settled ? remainder.length : safeBoundary(remainder);
+    if (boundary > 0) {
+      const raw = remainder.slice(0, boundary);
+      const spoken = normalize(raw);
+      if (spoken.length > 1) {
+        addParagraph(p, spoken);
+        log('Queued block',p.items.length,'chars=',spoken.length,
+          'since_reply_ms=', Date.now()-p.startedAt);
       }
+      p.emittedRaw += raw;
     }
-    while (p.accepted.length < safe) {
-      const text = blocks[p.accepted.length];
-      p.accepted.push(text);
-      addParagraph(p,text);
-    }
-    if(settled) p.finished=true;
+    if (settled) p.finished=true;
     pump(p,generation);playReady(p,generation);
   }
 
@@ -242,7 +267,7 @@
       const first=[...root.children].find(el=>el.matches('div.group'));
       if(group!==first)return;
       clearPlayback();activeGroup=group;startPipeline(group);
-      log('New reply detected. Paragraph pipeline ready.');
+      log('New reply detected. Speech pipeline ready.');
     }
     processText(group,msg);
   }
@@ -262,5 +287,5 @@
 
   setInterval(scan, 180);
   scan();
-  log('v0.4 loaded. Paragraphs are synthesized early and played in order.');
+  log('v0.4.1 loaded. Completed sentences and paragraphs are synthesized early.');
 })();
